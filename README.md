@@ -34,7 +34,7 @@ Analyze supplier costs, profitability, and regional trends. Run “what-if” sc
 | Regional Trends                   | AI Chatbot                        |
 | ![Screenshot 3](Screenshot_3.png) | ![Screenshot 4](Screenshot_4.png) |
 | What-If Scenario                  | Export / Insights                 |
-| ![Screenshot 5](Screenshot_5.png) |                                   |
+| ![Screenshot 5](Screenshot_5.png) | ![Screenshot 5](Screenshot_5.png) |
 
 🛠️ How to Run Locally
 1. Clone the repository
