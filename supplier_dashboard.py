@@ -174,13 +174,30 @@ if cost_increase > 0:
     )
 
 # -------------------------------
+# Supplier Metrics for AI
+# -------------------------------
+supplier_metrics = (
+    filtered.groupby("Supplier")
+    .agg(
+        Revenue=("Revenue", "sum"),
+        TotalCost=("Simulated Total Cost", "sum"),
+        Margin=("Simulated Margin", "sum"),
+        Orders=("Quantity", "sum")
+    )
+)
+supplier_metrics["MarginPct"] = supplier_metrics["Margin"] / supplier_metrics["Revenue"] * 100
+max_orders = supplier_metrics["Orders"].max()
+supplier_metrics["Utilization"] = supplier_metrics["Orders"] / max_orders * 100
+supplier_table_str = supplier_metrics.reset_index().to_string(index=False)
+
+# -------------------------------
 # Chatbot Section
 # -------------------------------
 st.subheader("💬 Ask the Supplier AI")
 
 st.write(
-    "Ask questions about supplier costs, margins, sourcing risk, or negotiation strategy.\n\n"
-    "**Examples:** Who should we renegotiate with? Which region has highest risk?"
+    "Ask questions about supplier costs, margins, utilization, or negotiation strategy.\n\n"
+    "**Examples:** Which suppliers deliver strong margin but appear underutilized? Who should we renegotiate with?"
 )
 
 if "chat_history" not in st.session_state:
@@ -190,33 +207,27 @@ user_question = st.text_input("Your question")
 
 def mock_chat_response(question):
     q = question.lower()
+    if "underutilized" in q or "margin" in q:
+        top_underutilized = supplier_metrics[
+            (supplier_metrics["MarginPct"] > supplier_metrics["MarginPct"].median()) &
+            (supplier_metrics["Utilization"] < 50)
+        ]
+        bullets = []
+        for i, row in top_underutilized.iterrows():
+            bullets.append(
+                f"• {row.name}: {row['Utilization']:.0f}% utilization, ${row['Margin']:,} margin"
+            )
+        if not bullets:
+            bullets.append("• No high-margin underutilized suppliers found")
+        return "\n".join(bullets)
 
-    if "renegotiate" in q or "expensive" in q:
-        return (
-            f"• {expensive.index[0]} and {expensive.index[1]} are the highest-cost suppliers\n"
-            "• Prioritize renegotiation or volume rebalancing\n"
-            "• Monitor margin erosion closely"
+    if "expensive" in q or "renegotiate" in q:
+        high_cost = supplier_metrics.sort_values("TotalCost", ascending=False).head(3)
+        return "\n".join(
+            [f"• {row.name}: ${row['TotalCost']:,} total cost, {row['MarginPct']:.1f}% margin" for _, row in high_cost.iterrows()]
         )
 
-    if "profit" in q or "margin" in q:
-        return (
-            f"• {profitable.index[0]} delivers strongest margins\n"
-            "• Consider allocating higher volumes\n"
-            "• Protect pricing stability"
-        )
-
-    if "risk" in q or "region" in q:
-        return (
-            "• China and India show higher cost volatility\n"
-            "• Diversify sourcing where possible\n"
-            "• Track geopolitical and duty risks"
-        )
-
-    return (
-        "• Focus on high-cost suppliers\n"
-        "• Monitor regional exposure\n"
-        "• Use scenario modeling before negotiations"
-    )
+    return "• Focus on high-cost suppliers\n• Monitor margins\n• Use scenario modeling before negotiations"
 
 if user_question:
     st.session_state.chat_history.append(("user", user_question))
@@ -224,31 +235,25 @@ if user_question:
     if client:
         try:
             context = f"""
-Top expensive suppliers: {list(expensive.index)}
-Top profitable suppliers: {list(profitable.index)}
-Regions selected: {regions}
-Simulated cost increase: {cost_increase}%
+Supplier metrics (Revenue, TotalCost, Margin, Orders, MarginPct, Utilization %):
+{supplier_table_str}
 """
-
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a supply chain strategy advisor for executives. "
-                            "Respond in 3 short bullet points. "
-                            "Be concise, actionable, and under 80 words total."
-                        )
+                    {"role": "system",
+                     "content": (
+                         "You are a supply chain strategy advisor for executives. "
+                         "Use only the suppliers in the provided table. "
+                         "Answer in 3 short bullet points, concise and actionable, referencing numbers where possible."
+                     )
                     },
                     {"role": "assistant", "content": context},
                     {"role": "user", "content": user_question}
                 ],
                 max_tokens=300
             )
-
             answer = response.choices[0].message.content
-
         except Exception:
             answer = mock_chat_response(user_question)
     else:
